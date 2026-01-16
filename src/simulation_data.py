@@ -1,45 +1,51 @@
-"""
-Drone specifications for quadcopter landing simulation. (planar model)
-"""
-
-# Mass (kg)
 m = 0.724
+"""Mass of the quadcopter (kg)
+"""
 
-# Maximum vertical velocity (m/s)
-vy_max = 10
+vy_max = int(10)
+"""
+Maximum vertical velocity of the quadcopter (m/s)
+"""
 
-# Maximum horizontal velocity (m/s)
-vx_max = 21
+vx_max = int(21)
+"""
+Maximum horizontal velocity of the quadcopter (m/s)
+"""
 
-# Arm length (meters)
-arm_length = 0.15
+arm_length = float(0.15)
+"""Length of the quadcopter arms (meters)
+"""
 
-# Maximum thrust (Newtons)
-max_thrust = 15.0
-
+max_thrust = float(15.0)
+"""Maximum thrust per rotor (Newtons)
 
 """
-Landing pad specifications
+
+vx_pad_max = int(5) 
+"""Maximum horizontal velocity of the landing pad (m/s)
 """
-# Maximum horizontal velocity of the landing pad (m/s)
-vx_pad_max = 5
-# Maximum horizontal acceleration of the landing pad (m/s^2)
-a_pad_max = 1
 
+a_pad_max = int(1)
+"""Maximum horizontal acceleration of the landing pad (m/s^2)
 """
-Simulation specifications for RL.
+
+dt = float(0.01)
+"""Time step for the simulation (seconds)
 """
-# Time step (seconds)
-dt = 0.01
 
-# Minimum initial height of the quadcopter (meters)
-y_init_min = 20
 
-# Maximum initial height of the quadcopter (meters)
-y_init_max = 30
+y_init_min = int(20)   
+"""Minimum initial height of the quadcopter (meters)
+""" 
 
-# Maximum initial horizontal position (meters)
-x_init_max = 50
+y_init_max = int(30)
+"""Maximum initial height of the quadcopter (meters)
+"""
 
-# Minimum initial horizontal position (meters)
-x_init_min = -50
+x_init_max = int(50)
+"""Maximum initial horizontal position (meters)
+"""
+
+x_init_min = int(-50)
+"""Minimum initial horizontal position (meters)
+"""
