@@ -1,16 +1,17 @@
-# import sys
-# sys.path.insert(0, 'c:\\4SC000\\Quadcopter-landing-4SC000')
+import matplotlib.pyplot as plt
 
 from src.env import PlanarQuadcopterEnv
-import matplotlib.pyplot as plt
+from src.visualization import QuadcopterVisualizer
 
 
 def main():
-    # Initialize the environment
+    # Initialize the environment and visualizer
     env = PlanarQuadcopterEnv()
+    vis = QuadcopterVisualizer(env)
 
     # Reset the environment
     state, info = env.reset()
+    vis.reset()
 
     print("=" * 50)
     print("QUADCOPTER SIMULATION")
@@ -28,30 +29,26 @@ def main():
 
     while running and step < max_steps:
         # Check if figure was closed
-        if (
-            not plt.fignum_exists(env.fig.number)
-            if hasattr(env, "fig") and env.fig is not None
-            else False
-        ):
+        if vis.fig is not None and not plt.fignum_exists(vis.fig.number):
             print("\nWindow closed by user.")
             break
 
         # Check if user wants to quit
-        if env.should_quit:
+        if vis.should_quit:
             print("\nQuit requested by user.")
             break
 
         # Handle reset request
-        if env.should_reset:
+        if vis.should_reset:
             state, info = env.reset()
-            env.should_reset = False
+            vis.reset()
             step = 0
             print("\nSimulation reset!")
             continue
 
         # Check if paused
-        if env.paused:
-            env.render()
+        if vis.paused:
+            vis.render(state)
             continue
 
         # Sample a random action
@@ -61,7 +58,7 @@ def main():
         state, reward, terminated, truncated, info = env.step(action)
 
         # Render the environment
-        env.render()
+        vis.render(state)
 
         step += 1
 
@@ -75,31 +72,25 @@ def main():
 
             # Wait for user input after termination
             while True:
-                # Check if figure was closed
-                if (
-                    not plt.fignum_exists(env.fig.number)
-                    if hasattr(env, "fig") and env.fig is not None
-                    else True
-                ):
+                if vis.fig is None or not plt.fignum_exists(vis.fig.number):
                     running = False
                     break
 
-                if env.should_quit:
+                if vis.should_quit:
                     running = False
                     break
 
-                if env.should_reset:
+                if vis.should_reset:
                     state, info = env.reset()
-                    env.should_reset = False
+                    vis.reset()
                     step = 0
                     print("\nSimulation reset!")
                     break
 
-                # Keep rendering to process events
-                env.render()
+                vis.render(state)
 
-    # Close the environment
-    env.close()
+    # Close everything
+    vis.close()
     print("\nSimulation complete!")
 
 
