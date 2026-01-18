@@ -82,6 +82,23 @@ class PlanarQuadcopterEnv(gym.Env):
             x_min=-10, x_max=10, v_max=vx_pad_max, a_max=a_pad_max, dt=dt
         )
 
+        # GUI control flags
+        self.paused = False
+        self.should_reset = False
+        self.should_quit = False
+
+    def _on_key_press(self, event):
+        """Handle keyboard events for GUI controls."""
+        if event.key == " ":
+            self.paused = not self.paused
+            status = "PAUSED" if self.paused else "RUNNING"
+            print(f"Simulation {status}")
+        elif event.key == "r":
+            self.should_reset = True
+            self.paused = False
+        elif event.key == "q":
+            self.should_quit = True
+
     def reset(self, seed=None, options=None):
         # 1. Setup the Random Number Generator (This is all super() does!)
         super().reset(seed=seed)
@@ -104,9 +121,16 @@ class PlanarQuadcopterEnv(gym.Env):
                     high=self.observation_space.high[n] / 4,
                 )
 
-        # 5. YOU must reset the internal logic variables
-        # self.platform_accel = self.state[8]
+        # Reset internal logic variables
         self.platform_accel_counter = 0
+
+        # Reset trajectory history
+        self.trajectory_x = []
+        self.trajectory_y = []
+
+        # Reset control flags (but keep should_quit)
+        self.paused = False
+        self.should_reset = False
 
         return self.state, {}
 
@@ -204,41 +228,48 @@ class PlanarQuadcopterEnv(gym.Env):
         )
 
         # 5. Termination & Rewards
-        # distance_to_platform = np.abs(x_new - self.platform.x)
-        # velocity_magnitude = np.sqrt(x_dot_new**2 + y_dot_new**2)
+        distance_to_platform = np.abs(x_new - self.platform.x)
+        velocity_magnitude = np.sqrt(x_dot_new**2 + y_dot_new**2)
 
-        # terminated = False
-        # reward = 0.0
+        terminated = False
+        truncated = False
 
-        # # Check if quadcopter hit the ground
-        # if y_new <= 0.0:
-        #     if distance_to_platform < 0.2 and velocity_magnitude < 1.0:
-        #         reward = 100.0  # Successful landing
-        #     else:
-        #         reward = -100.0  # Crashed
-        #     terminated = True
-        # # Check if out of bounds
-        # elif np.abs(x_new) > 20.0 or y_new > 20.0:
-        #     reward = -50.0
-        #     terminated = True
-        # else:
-        #     # Dense reward to guide agent toward platform
-        #     reward = -0.01 * distance_to_platform
+        # Check if quadcopter hit the ground
+        if y_new <= 0.0:
+            terminated = True
 
-        # truncated = False
-        # info = {
-        #     "distance_to_platform": distance_to_platform,
-        #     "velocity": velocity_magnitude,
-        #     "platform_x": self.platform.x,
-        # }
+        info = {
+            "distance_to_platform": distance_to_platform,
+            "velocity": velocity_magnitude,
+            "platform_x": self.platform.x,
+        }
 
-        return self.state, {}  # , reward, terminated, truncated, info
+        return self.state, {}, terminated, truncated, info
 
     def render(self):
         # Initialize figure and axis only once
         if not hasattr(self, "fig") or self.fig is None:
-            self.fig, self.ax = plt.subplots(figsize=(10, 8))
+            # Create figure with extra space on the right for HUD
+            self.fig, self.ax = plt.subplots(figsize=(14, 8))
+            self.fig.subplots_adjust(right=0.65)  # Make room for HUD on the right
             plt.ion()  # Enable interactive mode
+            self.hud_text = None  # Initialize HUD text object
+
+            # Connect keyboard event handler
+            self.fig.canvas.mpl_connect("key_press_event", self._on_key_press)
+
+            # Connect window close event handler
+            self.fig.canvas.mpl_connect("close_event", self._on_close)
+
+        # Check if figure still exists
+        if not plt.fignum_exists(self.fig.number):
+            self.should_quit = True
+            return
+
+        # Initialize trajectory lists if they don't exist
+        if not hasattr(self, "trajectory_x"):
+            self.trajectory_x = []
+            self.trajectory_y = []
 
         # Clear the axis every frame
         self.ax.cla()
@@ -249,16 +280,41 @@ class PlanarQuadcopterEnv(gym.Env):
         self.ax.set_aspect("equal")
         self.ax.set_xlabel("X (m)")
         self.ax.set_ylabel("Y (m)")
-        self.ax.set_title("Planar Quadcopter Landing")
+
+        # Update title to show pause status
+        status_str = " [PAUSED]" if self.paused else ""
+        self.ax.set_title(f"Planar Quadcopter Landing{status_str}")
         self.ax.grid(True, alpha=0.3)
 
         # Extract state
         x, y, theta = self.state[0], self.state[1], self.state[2]
+        x_dot, y_dot, theta_dot = self.state[3], self.state[4], self.state[5]
         platform_x = self.state[6]
+        platform_v = self.state[7]
+        platform_a = self.state[8]
 
-        # Draw the Platform (Red rectangle at y=0)
-        platform_width = 2.0
-        platform_height = 0.3
+        # Store trajectory (only if not paused)
+        if not self.paused and (
+            len(self.trajectory_x) == 0
+            or (self.trajectory_x[-1] != x or self.trajectory_y[-1] != y)
+        ):
+            self.trajectory_x.append(x)
+            self.trajectory_y.append(y)
+
+        # Draw the trajectory (dashed line)
+        if len(self.trajectory_x) > 1:
+            self.ax.plot(
+                self.trajectory_x,
+                self.trajectory_y,
+                "g--",
+                linewidth=1.5,
+                alpha=0.7,
+                label="Trajectory",
+            )
+
+        # Draw the Platform (Red rectangle at y=0) - enlarged
+        platform_width = 4.0
+        platform_height = 0.6
         platform_left = platform_x - platform_width / 2
         platform_rect = plt.Rectangle(
             (platform_left, 0),
@@ -269,24 +325,112 @@ class PlanarQuadcopterEnv(gym.Env):
         )
         self.ax.add_patch(platform_rect)
 
-        # Draw the Quadcopter
+        # Draw the Quadcopter (scaled up for visibility)
+        visual_scale = 10.0  # Scale factor for visualization
+        visual_arm_length = self.arm_length * visual_scale
+
         # Calculate arm endpoints using trigonometry
         # Left arm endpoint
-        left_x = x - self.arm_length * np.cos(theta)
-        left_y = y - self.arm_length * np.sin(theta)
+        left_x = x - visual_arm_length * np.cos(theta)
+        left_y = y - visual_arm_length * np.sin(theta)
         # Right arm endpoint
-        right_x = x + self.arm_length * np.cos(theta)
-        right_y = y + self.arm_length * np.sin(theta)
+        right_x = x + visual_arm_length * np.cos(theta)
+        right_y = y + visual_arm_length * np.sin(theta)
 
         # Draw arms as blue line
-        self.ax.plot([left_x, right_x], [left_y, right_y], "b-", linewidth=3)
+        self.ax.plot([left_x, right_x], [left_y, right_y], "b-", linewidth=4)
 
         # Draw center dot
-        self.ax.plot(x, y, "bo", markersize=8)
+        self.ax.plot(x, y, "bo", markersize=12)
 
         # Draw motor positions (small circles at arm ends)
-        self.ax.plot(left_x, left_y, "ko", markersize=6)
-        self.ax.plot(right_x, right_y, "ko", markersize=6)
+        self.ax.plot(left_x, left_y, "ko", markersize=10)
+        self.ax.plot(right_x, right_y, "ko", markersize=10)
 
-        # Pause to create animation effect
+        # Draw orientation arrow (perpendicular to arms, pointing "up" relative to drone)
+        arrow_length = visual_arm_length * 1.2
+        arrow_dx = -arrow_length * np.sin(theta)
+        arrow_dy = arrow_length * np.cos(theta)
+        self.ax.arrow(
+            x,
+            y,
+            arrow_dx,
+            arrow_dy,
+            head_width=1.2,
+            head_length=0.8,
+            fc="orange",
+            ec="darkorange",
+            linewidth=2,
+        )
+
+        # Add HUD (Heads-Up Display) outside the plot area
+        theta_deg = np.degrees(theta)
+
+        # Determine landing status
+        if y <= 0.0:
+            status = "LANDED/CRASHED"
+        elif self.paused:
+            status = "PAUSED"
+        else:
+            status = "FLYING"
+
+        hud_string = (
+            f"STATUS: {status}\n"
+            f"\n"
+            f"QUADCOPTER STATE:\n"
+            f"──────────────────────\n"
+            f"  Position:\n"
+            f"    x  = {x:8.2f} m\n"
+            f"    y  = {y:8.2f} m\n"
+            f"    θ  = {theta_deg:8.2f}°\n"
+            f"\n"
+            f"  Velocity:\n"
+            f"    vx = {x_dot:8.2f} m/s\n"
+            f"    vy = {y_dot:8.2f} m/s\n"
+            f"    ω  = {theta_dot:8.2f} rad/s\n"
+            f"\n"
+            f"PLATFORM STATE:\n"
+            f"──────────────────────\n"
+            f"  x = {platform_x:8.2f} m\n"
+            f"  v = {platform_v:8.2f} m/s\n"
+            f"  a = {platform_a:8.2f} m/s²\n"
+            f"\n"
+            f"CONTROLS:\n"
+            f"──────────────────────\n"
+            f"  SPACE - Pause/Resume\n"
+            f"  R     - Reset\n"
+            f"  Q     - Quit"
+        )
+
+        # Remove old HUD text if it exists
+        if self.hud_text is not None:
+            self.hud_text.remove()
+
+        # Add text outside the plot area using figure coordinates
+        self.hud_text = self.fig.text(
+            0.68,
+            0.95,
+            hud_string,
+            transform=self.fig.transFigure,
+            fontsize=10,
+            verticalalignment="top",
+            family="monospace",
+            bbox=dict(boxstyle="round", facecolor="lightgray", alpha=0.9),
+        )
+
+        # Force canvas update and process events
+        self.fig.canvas.draw_idle()
+        self.fig.canvas.flush_events()
         plt.pause(0.01)
+
+    def _on_close(self, event):
+        """Handle window close event."""
+        self.should_quit = True
+
+    def close(self):
+        """Close the environment and cleanup."""
+        if hasattr(self, "fig") and self.fig is not None:
+            plt.close(self.fig)
+            self.fig = None
+            self.ax = None
+        plt.ioff()  # Disable interactive mode
