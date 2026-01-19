@@ -17,7 +17,7 @@ arm_length = 0.15
 """Length of the quadcopter arms (meters)
 """
 
-max_thrust = 10.0
+max_thrust = 7.0
 """Maximum thrust per rotor (Newtons)
 
 """

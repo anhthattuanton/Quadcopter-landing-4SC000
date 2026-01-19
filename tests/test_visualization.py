@@ -1,7 +1,13 @@
 import matplotlib.pyplot as plt
+from stable_baselines3 import PPO
 
 from src.env import PlanarQuadcopterEnv
 from src.visualization import QuadcopterVisualizer
+
+"""
+TODO: fix training model because right now the model is going up instead of down
+      - check reward function again
+"""
 
 
 def main():
@@ -9,12 +15,15 @@ def main():
     env = PlanarQuadcopterEnv()
     vis = QuadcopterVisualizer(env)
 
+    # Load the trained PPO model
+    model = PPO.load("models/PPO/2000000")  # Adjust to your latest model file
+
     # Reset the environment
     state, info = env.reset()
     vis.reset()
 
     print("=" * 50)
-    print("QUADCOPTER SIMULATION")
+    print("QUADCOPTER SIMULATION (PPO Agent)")
     print("=" * 50)
     print("Controls:")
     print("  SPACE - Pause/Resume simulation")
@@ -51,8 +60,8 @@ def main():
             vis.render(state)
             continue
 
-        # Sample a random action
-        action = env.action_space.sample()
+        # Get action from trained PPO model
+        action, _ = model.predict(state, deterministic=True)
 
         # Execute the action
         state, reward, terminated, truncated, info = env.step(action)
@@ -66,7 +75,7 @@ def main():
         if terminated:
             print(f"\nSimulation ended at step {step}")
             print(f"  Final position: x={state[0]:.2f}, y={state[1]:.2f}")
-            print(f"  Distance to platform: {info['distance_to_platform']:.2f} m")
+            print(f"  Distance to platform: {info['total_distance']:.2f} m")
             print(f"  Final velocity: {info['velocity']:.2f} m/s")
             print("\nPress R to reset, Q to quit, or close the window.")
 
