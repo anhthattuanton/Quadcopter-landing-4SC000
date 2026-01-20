@@ -3,6 +3,7 @@ import numpy as np
 from gymnasium import spaces
 
 from src.platform_logic import MovingPlatform
+from src.reward_func import calculate_reward
 from src.simulation_data import (
     J,
     a_pad_max,
@@ -156,71 +157,9 @@ class PlanarQuadcopterEnv(gym.Env):
             dtype=np.float32,
         )
 
-        # 5. REWARD FUNCTION
-
-        # A. Calculate Distances
-        dist_x = x_new - self.platform.x
-        dist_y = y_new
-        total_distance = np.sqrt(dist_x**2 + dist_y**2)
-        velocity_magnitude = np.sqrt(x_dot_new**2 + y_dot_new**2)
-
-        # B. Define Success Criteria
-        is_on_pad = np.abs(dist_x) < 0.5
-        is_upright = np.abs(theta_new) < 0.2
-        is_slow = velocity_magnitude < 1.0
-
-        reward = 0.0
-        terminated = False
-
-        # C. GROUND CONTACT LOGIC (Crucial Changes Here!)
-        if y_new <= 0.0:
-            terminated = True
-            if is_on_pad:
-                # IT HIT THE PAD!
-                if is_upright and is_slow:
-                    reward = 100.0  # 🌟 Perfect Landing
-                else:
-                    # CRITICAL CHANGE: Give POSITIVE reward for finding the pad
-                    # even if the landing was hard. This lures the drone down.
-                    reward = 30.0  # "Good aim, but too fast/tilted!"
-            else:
-                reward = -100.0  # Missed the pad (The Floor is Lava)
-
-        # D. OUT OF BOUNDS
-        # Ensure y_max is high enough (e.g., 30.0) so it doesn't die instantly on spawn
-        elif np.abs(x_new) > x_init_max or y_new > y_init_max:
-            terminated = True
-            reward = -100.0  # Flew away
-
-        # E. SHAPING REWARDS
-        else:
-            # 1. Distance (Pull it to the target)
-            r_dist = -(total_distance / 10.0)
-
-            # 2. Stability
-            r_tilt = -0.5 * np.abs(theta_new)
-
-            # 3. Action Efficiency
-            r_action = -0.05 * np.sum(action**2)
-
-            # 4. REMOVED VELOCITY PENALTY
-            # We want it to fly fast! Only penalize speed at the very end (Landing checks).
-            # r_vel = ... (Commented out)
-
-            # 5. Time Penalty (Battery Drain)
-            r_time = -0.05
-
-            reward = r_dist + r_tilt + r_action + r_time
+        # 5. Calculate Reward
+        reward, terminated, info = calculate_reward(self.state, action, self.platform.x)
 
         truncated = False
-
-        # ... (Return statement)
-
-        info = {
-            "distance_x": dist_x,
-            "total_distance": total_distance,
-            "velocity": velocity_magnitude,
-            "platform_x": self.platform.x,
-        }
 
         return self.state, reward, terminated, truncated, info

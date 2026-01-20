@@ -3,6 +3,7 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from typing import Callable
 import os
+import shutil
 
 from src.env import PlanarQuadcopterEnv
 
@@ -38,10 +39,19 @@ def train():
     models_dir = "models/PPO"
     log_dir = "logs"
 
-    if not os.path.exists(models_dir):
-        os.makedirs(models_dir)
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
+    # 1. Clean out OLD Models (Handle both files and folders)
+    if os.path.exists(models_dir):
+        shutil.rmtree(models_dir)  # Deletes the folder and everything inside
+    os.makedirs(models_dir)        # Re-create empty folder
+
+    # 2. Clean out OLD Logs
+    if os.path.exists(log_dir):
+        # Check if TensorBoard is holding files open!
+        try:
+            shutil.rmtree(log_dir)
+        except PermissionError:
+            print("⚠️ COULD NOT DELETE LOGS: TensorBoard might be running. Please close it.")
+    os.makedirs(log_dir)
 
     # 2. Vectorize the Environment (Run 4 simulations at once!)
     # This speeds up training massively.
@@ -52,15 +62,46 @@ def train():
     lr_schedule = constant_then_decay_schedule(initial_value=3e-4, decay_start=0.5)
 
     # 3. Define the PPO Model
+    # Define the Network Architecture (The "Brain" Size)
+    # pi = Policy (Actor), vf = Value Function (Critic)
+    policy_kwargs = dict(
+        net_arch=dict(pi=[256, 256], vf=[256, 256])
+    )
+
     model = PPO(
-        "MlpPolicy",
-        env,
-        verbose=1,
+        "MlpPolicy", 
+        env, 
+        verbose=1, 
         tensorboard_log=log_dir,
-        # Optional: Tweaked hyperparameters for flying tasks
+        
+        # 1. Learning Rate (Your Schedule)
         learning_rate=lr_schedule,
-        ent_coef=0.01,  # Encourage exploration slightly
-        batch_size=2048,
+        
+        # 2. Network Size (CRITICAL UPGRADE)
+        policy_kwargs=policy_kwargs,
+        
+        # 3. Batch Size (Higher is usually better for gradients)
+        batch_size=2048,   
+        
+        # 4. n_steps (Steps per CPU before updating)
+        # 8 CPUs * 2048 steps = 16,384 steps per update. Good size.
+        n_steps=2048,
+        
+        # 5. Gamma (Patience)
+        # 0.995 allows it to "see" further into the future for that landing bonus
+        gamma=0.995,
+        
+        # 6. GAE Lambda (Bias vs Variance)
+        # 0.95 is standard, 0.98 is smoother for continuous control
+        gae_lambda=0.98,
+        
+        # 7. Entropy Coefficient (Exploration)
+        # 0.01 forces it to keep trying new things slightly
+        ent_coef=0.01,
+        
+        # 8. Gradient Clipping (Safety)
+        # Prevents the neural network from "exploding" if it sees bad data
+        max_grad_norm=0.5,
     )
 
     # 4. The Training Loop
