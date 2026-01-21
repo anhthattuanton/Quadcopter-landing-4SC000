@@ -2,15 +2,13 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
+from src.dynamics_2d import PlanarQuadcopterDynamics
 from src.platform_logic import MovingPlatform
 from src.reward_func import calculate_reward
 from src.simulation_data import (
-    J,
     a_pad_max,
     arm_length,
     dt,
-    m,
-    max_thrust,
     vx_max,
     vx_pad_max,
     vy_max,
@@ -67,13 +65,9 @@ class PlanarQuadcopterEnv(gym.Env):
         )
         self.observation_space = spaces.Box(low=low, high=high, dtype=np.float32)
 
-        # Simulation constants
-        self.dt = dt
-        self.gravity = 9.81
-        self.mass = m
-        self.arm_length = arm_length
-        self.max_thrust = max_thrust
-        self.J = J
+        # Initialize dynamics and platform
+        self.dynamics = PlanarQuadcopterDynamics()
+        self.arm_length = arm_length  # Keep for visualization
         self.state = None
 
         self.platform = MovingPlatform(
@@ -109,39 +103,15 @@ class PlanarQuadcopterEnv(gym.Env):
         Returns:
             observation (np.array), reward (float), terminated (bool), truncated (bool), info (dict)
         """
-        # 1. Action Handling
-        action = np.clip(action, -1.0, 1.0)
-        F_left = (action[0] + 1.0) * (self.max_thrust / 2.0)
-        F_right = (action[1] + 1.0) * (self.max_thrust / 2.0)
+        # 1. Compute drone dynamics
+        x_new, y_new, theta_new, x_dot_new, y_dot_new, theta_dot_new = (
+            self.dynamics.step(self.state, action)
+        )
 
-        # Extract current state
-        x, y, theta, x_dot, y_dot, theta_dot = self.state[0:6]
-
-        # 2. Calculate Dynamics
-        F_total = F_left + F_right
-        moment = (F_right - F_left) * self.arm_length
-
-        # Accelerations
-        accel_x = -(F_total / self.mass) * np.sin(theta)
-        accel_y = (F_total / self.mass) * np.cos(theta) - self.gravity
-        accel_theta = moment / self.J
-
-        # 3. Integration (Semi-Implicit Euler)
-        x_dot_new = x_dot + accel_x * self.dt
-        y_dot_new = y_dot + accel_y * self.dt
-        theta_dot_new = theta_dot + accel_theta * self.dt
-
-        x_new = x + x_dot_new * self.dt
-        y_new = y + y_dot_new * self.dt
-        theta_new = theta + theta_dot_new * self.dt
-
-        # Normalize theta to [-pi, pi]
-        theta_new = np.arctan2(np.sin(theta_new), np.cos(theta_new))
-
-        # 4. Platform Logic
+        # 2. Platform Logic
         self.platform.step()
 
-        # Update state
+        # 3. Update state
         self.state = np.array(
             [
                 x_new,
@@ -157,8 +127,11 @@ class PlanarQuadcopterEnv(gym.Env):
             dtype=np.float32,
         )
 
-        # 5. Calculate Reward
-        reward, terminated, info = calculate_reward(self.state, action, self.platform.x)
+        # 4. Calculate Reward
+        action_clipped = np.clip(action, -1.0, 1.0)
+        reward, terminated, info = calculate_reward(
+            self.state, action_clipped, self.platform.x
+        )
 
         truncated = False
 

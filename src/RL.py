@@ -7,6 +7,10 @@ import shutil
 
 from src.env import PlanarQuadcopterEnv
 
+"""
+TODO: fix reward function, then train PPO agent to land quadcopter on moving platform.
+"""
+
 
 def constant_then_decay_schedule(
     initial_value: float, decay_start: float = 0.5
