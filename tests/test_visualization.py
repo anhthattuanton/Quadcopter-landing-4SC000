@@ -12,7 +12,7 @@ def main():
     vis = QuadcopterVisualizer(env)
 
     # Load the trained PPO model
-    model = PPO.load("models/PPO/5000000")  # Adjust to your latest model file
+    model = PPO.load("models/PPO/10000000")  # Adjust to your latest model file
 
     print("=" * 50)
     print("QUADCOPTER SIMULATION (PPO Agent)")

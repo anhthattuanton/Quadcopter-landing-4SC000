@@ -128,9 +128,8 @@ class PlanarQuadcopterEnv(gym.Env):
         )
 
         # 4. Calculate Reward
-        action_clipped = np.clip(action, -1.0, 1.0)
         reward, terminated, info = calculate_reward(
-            self.state, action_clipped, self.platform.x
+            self.state
         )
 
         truncated = False

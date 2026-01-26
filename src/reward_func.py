@@ -3,7 +3,7 @@ import numpy as np
 from src.simulation_data import x_init_max, y_init_max
 
 
-def calculate_reward(state, action, platform_x):
+def calculate_reward(state):
     """
     Calculate the reward using a Phased Reward Strategy.
     
@@ -24,7 +24,7 @@ def calculate_reward(state, action, platform_x):
         info (dict): additional information
     """
     # === UNPACK STATE ===
-    x, y, theta, x_dot, y_dot, theta_dot, _, platform_v, _ = state
+    x, y, theta, x_dot, y_dot, theta_dot, platform_x, platform_v, _ = state
 
     # === CALCULATE RELATIVE METRICS ===
     # Signed distance to platform (positive = drone is to the right of platform)
@@ -33,17 +33,17 @@ def calculate_reward(state, action, platform_x):
     dist_total = np.sqrt(dist_x**2 + dist_y**2)
 
     # Relative velocity (drone velocity minus platform velocity)
-    vx_rel = np.abs(x_dot) - np.abs(platform_v)
+    v_total = np.sqrt(x_dot**2 + y_dot**2)
+    vx_rel = x_dot - platform_v
     vy_rel = y_dot
     vel_rel_total = np.sqrt(vx_rel**2 + vy_rel**2)
 
     # === DEFINE PHASES ===
     # Travel Phase: Far from target, need to approach aggressively
     # Landing Phase: Close to target, need precision and stability
-    PHASE_THRESHOLD = 4.0  # meters
+    PHASE_THRESHOLD = 8.0  # meters
     is_travel_phase = dist_total > PHASE_THRESHOLD
-    is_landing_phase = dist_total <= PHASE_THRESHOLD
-
+    is_stable = (np.abs(theta) < 0.2) and (v_total < 1.0) and (np.abs(theta_dot) < 0.2)
     # === SUCCESS FLAGS ===
     is_on_pad = np.abs(dist_x) < 0.5
     is_upright = np.abs(theta) < 0.2
@@ -61,15 +61,15 @@ def calculate_reward(state, action, platform_x):
         if is_on_pad and is_upright and is_soft:
             # Perfect landing: on pad, upright, and soft
             reward = 100.0
-        elif is_on_pad and is_upright:
-            # Good aim and stable, but hard landing
-            reward = 50.0
+        elif is_on_pad and (is_upright or is_soft):
+            # Good aim and stable, but hard landing or the other way round
+            reward = 30.0
         elif is_on_pad:
             # Hit the pad but crashed/tilted
             reward = 10.0
         else:
             # Missed the pad entirely
-            reward = -100.0
+            reward = -50.0
         
         return reward, terminated, _build_info(dist_x, dist_y, dist_total, vx_rel, vy_rel, vel_rel_total, is_on_pad)
 
@@ -82,7 +82,7 @@ def calculate_reward(state, action, platform_x):
     # === B. SHAPING REWARDS (In-Flight) ===
     
     # B0. Global survival bonus (small positive for staying alive)
-    reward += 0.1
+    reward += -0.01
 
     if is_travel_phase:
         # === PHASE 1: TRAVEL REWARDS (Aggressive Flight) ===
@@ -90,30 +90,25 @@ def calculate_reward(state, action, platform_x):
         
         # B1. Approach Reward: Reward velocity pointing towards target
         # Direction to target (normalized)
-        if dist_total > 0.01:  # Avoid division by zero
-            dir_to_target_x = -dist_x / dist_total  # Negative because we want to reduce dist_x
-            dir_to_target_y = -dist_y / dist_total  # Negative because we want to go down
+        if not is_stable:
+            r_upright = np.exp(-2 * (np.abs(theta) - 0.2)) - 1.0
+            r_stable_w = np.exp(-(np.abs(theta_dot) - 0.2)) - 1.0
+            r_stable_v = np.exp(-(v_total - 1.0)) - 1.0
+            reward += 0.1 * (r_upright + r_stable_w + r_stable_v)
         else:
-            dir_to_target_x = 0.0
-            dir_to_target_y = -1.0  # Default: go down
-        
-        # Dot product of velocity and direction to target
-        # Positive when moving towards target
-        approach_velocity = (dir_to_target_x * vx_rel) + (dir_to_target_y * vy_rel)
-        
-        # Reward moving towards target, penalize moving away
-        r_approach = 0.5 * approach_velocity
-        reward += r_approach
+            r_dist_to_x = np.exp(-0.25 * (np.abs(dist_x) - 10.0)) - 1.0
+            r_dist_to_y = np.exp(-0.25 * (np.abs(dist_y) - 10.0)) - 1.0
+            
 
-        # B2. Relaxed Stability: Only penalize extreme tilt (> ~45 degrees)
-        # This allows the drone to bank for horizontal movement
-        if np.abs(theta) > 0.8:
-            r_tilt = -2.0 * (np.abs(theta) - 0.8)  # Penalize excess tilt
-            reward += r_tilt
+            # B2. Relaxed Stability: Only penalize extreme tilt (> ~45 degrees)
+            # This allows the drone to bank for horizontal movement
+            if np.abs(theta) > 0.8:
+                r_tilt = -2.0 * (np.abs(theta) - 0.8)  # Penalize excess tilt
+                reward += r_tilt
 
-        # B3. Mild penalty for spinning (always bad)
-        r_spin = -0.1 * np.abs(theta_dot)
-        reward += r_spin
+            # B3. Mild penalty for spinning (always bad)
+            r_spin = np.exp(-(np.abs(theta_dot) - 1.0)) - 1.0
+            reward += r_spin + r_dist_to_x + r_dist_to_y
 
     else:
         # === PHASE 2: LANDING REWARDS (Precision) ===

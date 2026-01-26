@@ -101,8 +101,8 @@ def train():
     )
 
     # 4. The Training Loop
-    TOTAL_TIMESTEPS = 5_000_000  # Goal: 5 Million steps
-    STEPS_PER_LOOP = 100_000
+    TOTAL_TIMESTEPS = 10_000_000  # Goal: 5 Million steps
+    STEPS_PER_LOOP = 1_000_000
 
     # Calculate how many times to loop (5,000,000 / 100,000 = 50 loops)
     num_loops = int(TOTAL_TIMESTEPS / STEPS_PER_LOOP)
