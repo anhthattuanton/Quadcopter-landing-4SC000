@@ -5,7 +5,13 @@ from src.simulation_data import x_init_max, y_init_max
 
 def calculate_reward(state, action, platform_x):
     """
-    Calculate the reward for the current state and action.
+    Calculate the reward using a Phased Reward Strategy.
+    
+    Phase 1 (Travel): Aggressive flight to approach the platform.
+                      Rewards velocity towards target, relaxed tilt penalty.
+    
+    Phase 2 (Landing): Precision landing on the platform.
+                       Rewards position accuracy, strict stability, braking.
 
     Args:
         state: numpy array [x, y, theta, x_dot, y_dot, theta_dot, platform_x, platform_v, platform_a]
@@ -17,92 +23,138 @@ def calculate_reward(state, action, platform_x):
         terminated (bool): whether the episode has ended
         info (dict): additional information
     """
-    # Unpack state
-    x, y, theta, x_dot, y_dot, theta_dot, _, platform_vx, _ = state
+    # === UNPACK STATE ===
+    x, y, theta, x_dot, y_dot, theta_dot, _, platform_v, _ = state
 
-    # 1. Distance components
-    dist_x = np.abs(x - platform_x)
+    # === CALCULATE RELATIVE METRICS ===
+    # Signed distance to platform (positive = drone is to the right of platform)
+    dist_x = x - platform_x
     dist_y = y
     dist_total = np.sqrt(dist_x**2 + dist_y**2)
 
-    # 2. Velocity components
-    vel_total = np.sqrt(x_dot**2 + y_dot**2)
+    # Relative velocity (drone velocity minus platform velocity)
+    vx_rel = np.abs(x_dot) - np.abs(platform_v)
+    vy_rel = y_dot
+    vel_rel_total = np.sqrt(vx_rel**2 + vy_rel**2)
 
-    # 3. Relative velocity (how well drone matches platform motion)
-    relative_vx = np.abs(x_dot - platform_vx)
+    # === DEFINE PHASES ===
+    # Travel Phase: Far from target, need to approach aggressively
+    # Landing Phase: Close to target, need precision and stability
+    PHASE_THRESHOLD = 4.0  # meters
+    is_travel_phase = dist_total > PHASE_THRESHOLD
+    is_landing_phase = dist_total <= PHASE_THRESHOLD
 
-    # --- SUCCESS FLAGS ---
-    is_on_pad = dist_x < 0.5
+    # === SUCCESS FLAGS ===
+    is_on_pad = np.abs(dist_x) < 0.5
     is_upright = np.abs(theta) < 0.2
-    is_slow = vel_total < 1.0
-    is_landed = dist_y <= 0.1  # Small tolerance
+    is_soft = vel_rel_total < 0.1
+    is_landed = y <= 0.0
 
     reward = 0.0
     terminated = False
 
-    # --- A. TERMINAL REWARDS ---
+    # === A. TERMINAL CONDITIONS ===
+    
+    # A1. Ground Contact (Landed)
     if is_landed:
         terminated = True
-        if is_on_pad:
-            if is_upright and is_slow:
-                reward = 500.0  # 🏆 PERFECT LANDING
-            elif is_upright:
-                reward = 200.0  # Good landing
-            elif is_slow:
-                reward = 150.0  # Hard landing
-            else:
-                reward = 50.0  # Crash landing on pad
+        if is_on_pad and is_upright and is_soft:
+            # Perfect landing: on pad, upright, and soft
+            reward = 100.0
+        elif is_on_pad and is_upright:
+            # Good aim and stable, but hard landing
+            reward = 50.0
+        elif is_on_pad:
+            # Hit the pad but crashed/tilted
+            reward = 10.0
         else:
-            reward = -200.0  # Crashed into ground
+            # Missed the pad entirely
+            reward = -100.0
+        
+        return reward, terminated, _build_info(dist_x, dist_y, dist_total, vx_rel, vy_rel, vel_rel_total, is_on_pad)
 
-    elif np.abs(x) > x_init_max or y > y_init_max:
+    # A2. Out of Bounds
+    if np.abs(x) > x_init_max or y > y_init_max:
         terminated = True
-        reward = -200.0  # Flew away
+        reward = -50.0
+        return reward, terminated, _build_info(dist_x, dist_y, dist_total, vx_rel, vy_rel, vel_rel_total, is_on_pad)
 
-    # --- B. SHAPING REWARDS ---
+    # === B. SHAPING REWARDS (In-Flight) ===
+    
+    # B0. Global survival bonus (small positive for staying alive)
+    reward += 0.1
+
+    if is_travel_phase:
+        # === PHASE 1: TRAVEL REWARDS (Aggressive Flight) ===
+        # Goal: Get to the platform quickly. Allow banking/tilting for speed.
+        
+        # B1. Approach Reward: Reward velocity pointing towards target
+        # Direction to target (normalized)
+        if dist_total > 0.01:  # Avoid division by zero
+            dir_to_target_x = -dist_x / dist_total  # Negative because we want to reduce dist_x
+            dir_to_target_y = -dist_y / dist_total  # Negative because we want to go down
+        else:
+            dir_to_target_x = 0.0
+            dir_to_target_y = -1.0  # Default: go down
+        
+        # Dot product of velocity and direction to target
+        # Positive when moving towards target
+        approach_velocity = (dir_to_target_x * vx_rel) + (dir_to_target_y * vy_rel)
+        
+        # Reward moving towards target, penalize moving away
+        r_approach = 0.5 * approach_velocity
+        reward += r_approach
+
+        # B2. Relaxed Stability: Only penalize extreme tilt (> ~45 degrees)
+        # This allows the drone to bank for horizontal movement
+        if np.abs(theta) > 0.8:
+            r_tilt = -2.0 * (np.abs(theta) - 0.8)  # Penalize excess tilt
+            reward += r_tilt
+
+        # B3. Mild penalty for spinning (always bad)
+        r_spin = -0.1 * np.abs(theta_dot)
+        reward += r_spin
+
     else:
-        # 1. Horizontal tracking reward (CRITICAL for moving platform)
-        # Use softer decay so drone gets gradient from far away
-        r_horizontal = np.exp(-0.1 * dist_x)  # Slower decay
+        # === PHASE 2: LANDING REWARDS (Precision) ===
+        # Goal: Slow down, stabilize, and land precisely on the pad.
+        
+        # B1. Position Reward: Exponential pull towards exact center
+        # Stronger reward as drone gets closer
+        r_position = 2.0 * np.exp(-dist_total)
+        reward += r_position
 
-        # 2. Vertical progress reward (encourage descent)
-        # Reward for being lower AND for descending
-        r_altitude = np.exp(-0.05 * dist_y)  # Reward being close to ground
-        r_descend = (
-            -0.1 * y_dot if y_dot > 0 else 0.05
-        )  # Punish going up, reward going down
+        # B2. Strict Stability: Heavily penalize any tilt
+        if np.abs(theta) > 0.1:
+            r_tilt = -3.0 * np.abs(theta)
+            reward += r_tilt
 
-        # 3. Velocity matching reward (match platform velocity)
-        r_vel_match = np.exp(-0.5 * relative_vx)
+        # B3. Braking Penalty: Force the drone to slow down for soft landing
+        r_braking = -0.5 * vel_rel_total
+        reward += r_braking
 
-        # 4. Stability reward
-        r_stab = np.exp(-3.0 * np.abs(theta))
-        r_ang_vel = -0.1 * np.abs(theta_dot)  # Penalize spinning
+        # B4. Penalize spinning (stricter in landing phase)
+        r_spin = -0.5 * np.abs(theta_dot)
+        reward += r_spin
 
-        # 5. Action cost
-        r_act = -0.005 * np.sum(action**2)
+        # B5. Vertical velocity control: Penalize descending too fast
+        if vy_rel < -2.0:  # Falling faster than 2 m/s
+            r_descent = -1.0 * (np.abs(vy_rel) - 2.0)
+            reward += r_descent
 
-        # 6. Time penalty (encourage faster landing)
-        r_time = -0.01
-
-        # Combine with weights
-        reward = (
-            3.0 * r_horizontal  # Track platform X
-            + 2.0 * r_altitude  # Get close to ground
-            + 1.0 * r_descend  # Move downward
-            + 2.0 * r_vel_match  # Match platform speed
-            + 1.0 * r_stab  # Stay upright
-            + r_ang_vel
-            + r_act
-            + r_time
-        )
-
-    info = {
-        "dist_total": dist_total,
-        "dist_x": dist_x,
-        "is_on_pad": is_on_pad,
-        "vel_total": vel_total,
-        "relative_vx": relative_vx,
-    }
+    info = _build_info(dist_x, dist_y, dist_total, vx_rel, vy_rel, vel_rel_total, is_on_pad)
 
     return reward, terminated, info
+
+
+def _build_info(dist_x, dist_y, dist_total, vx_rel, vy_rel, vel_rel_total, is_on_pad):
+    """Build the info dictionary."""
+    return {
+        "dist_x": dist_x,
+        "dist_y": dist_y,
+        "dist_total": dist_total,
+        "vx_rel": vx_rel,
+        "vy_rel": vy_rel,
+        "vel_total": vel_rel_total,
+        "is_on_pad": is_on_pad,
+    }

@@ -101,10 +101,10 @@ def train():
     )
 
     # 4. The Training Loop
-    TOTAL_TIMESTEPS = 2_000_000  # Goal: 2 Million steps
+    TOTAL_TIMESTEPS = 5_000_000  # Goal: 5 Million steps
     STEPS_PER_LOOP = 100_000
 
-    # Calculate how many times to loop (2,000,000 / 100,000 = 20 loops)
+    # Calculate how many times to loop (5,000,000 / 100,000 = 50 loops)
     num_loops = int(TOTAL_TIMESTEPS / STEPS_PER_LOOP)
 
     print(f"Training for {TOTAL_TIMESTEPS} steps in {num_loops} loops...")
