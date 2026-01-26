@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+from src.simulation_data import dt, FRAME_SKIP
+
 
 class QuadcopterVisualizer:
     """
@@ -34,6 +36,10 @@ class QuadcopterVisualizer:
         self.x_limits = (-50, 50)
         self.y_limits = (0, 35)
 
+        # Time tracking
+        self.sim_time = 0.0
+        self.dt = dt
+
     def _on_key_press(self, event):
         """Handle keyboard events for GUI controls."""
         if event.key == " ":
@@ -51,11 +57,12 @@ class QuadcopterVisualizer:
         self.should_quit = True
 
     def reset(self):
-        """Reset visualization state (trajectory, flags)."""
+        """Reset visualization state (trajectory, flags, time)."""
         self.trajectory_x = []
         self.trajectory_y = []
         self.paused = False
         self.should_reset = False
+        self.sim_time = 0.0
 
     def render(self, state):
         """
@@ -110,6 +117,10 @@ class QuadcopterVisualizer:
         ):
             self.trajectory_x.append(x)
             self.trajectory_y.append(y)
+
+        # Update simulation time (only if not paused)
+        if not self.paused:
+            self.sim_time += self.dt * FRAME_SKIP
 
         # Draw trajectory
         self._draw_trajectory()
@@ -206,6 +217,7 @@ class QuadcopterVisualizer:
 
         hud_string = (
             f"STATUS: {status}\n"
+            f"TIME: {self.sim_time:8.2f} s\n"
             f"\n"
             f"QUADCOPTER STATE:\n"
             f"──────────────────────\n"

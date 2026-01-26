@@ -1,7 +1,9 @@
 import matplotlib.pyplot as plt
-
+from stable_baselines3 import PPO
+from src.simulation_data import FRAME_SKIP
 from src.env import PlanarQuadcopterEnv
 from src.visualization import QuadcopterVisualizer
+from src.quadcopter_sim_single import record_episode
 
 
 def main():
@@ -9,25 +11,29 @@ def main():
     env = PlanarQuadcopterEnv()
     vis = QuadcopterVisualizer(env)
 
-    # Reset the environment
-    state, info = env.reset()
-    vis.reset()
+    # Load the trained PPO model
+    model = PPO.load("models/PPO/5000000")  # Adjust to your latest model file
 
     print("=" * 50)
-    print("QUADCOPTER SIMULATION")
+    print("QUADCOPTER SIMULATION (PPO Agent)")
     print("=" * 50)
     print("Controls:")
     print("  SPACE - Pause/Resume simulation")
-    print("  R     - Reset simulation")
+    print("  R     - Reset simulation (new recording)")
     print("  Q     - Quit simulation")
     print("  (Close window to exit)")
     print("=" * 50)
 
-    running = True
-    step = 0
-    max_steps = 10000
+    # Record the episode first
+    print("\nRecording episode...")
+    states, infos, final_step = record_episode(env, model)
+    print(f"Recording complete! {len(states)} frames recorded.")
 
-    while running and step < max_steps:
+    # Playback variables
+    frame_idx = 0
+    running = True
+
+    while running:
         # Check if figure was closed
         if vis.fig is not None and not plt.fignum_exists(vis.fig.number):
             print("\nWindow closed by user.")
@@ -38,39 +44,41 @@ def main():
             print("\nQuit requested by user.")
             break
 
-        # Handle reset request
+        # Handle reset request - generate new recording
         if vis.should_reset:
-            state, info = env.reset()
+            print("\nRecording new episode...")
             vis.reset()
-            step = 0
-            print("\nSimulation reset!")
+            states, infos, final_step = record_episode(env, model)
+            print(f"Recording complete! {len(states)} frames recorded.")
+            frame_idx = 0
             continue
 
         # Check if paused
         if vis.paused:
-            vis.render(state)
+            # Still render current frame while paused
+            vis.render(states[frame_idx])
             continue
 
-        # Sample a random action
-        action = env.action_space.sample()
+        # Get current state for playback
+        state = states[frame_idx]
+        info = infos[frame_idx]
 
-        # Execute the action
-        state, reward, terminated, truncated, info = env.step(action)
-
-        # Render the environment
+        # Render the frame
         vis.render(state)
 
-        step += 1
+        # Advance to next frame
+        frame_idx += FRAME_SKIP
 
-        # Check for termination
-        if terminated:
-            print(f"\nSimulation ended at step {step}")
+        # Check if we've reached the end of recording
+        if frame_idx >= len(states):
+            print(f"\nPlayback ended at frame {frame_idx}")
             print(f"  Final position: x={state[0]:.2f}, y={state[1]:.2f}")
-            print(f"  Distance to platform: {info['distance_to_platform']:.2f} m")
-            print(f"  Final velocity: {info['velocity']:.2f} m/s")
-            print("\nPress R to reset, Q to quit, or close the window.")
+            print(f"  Distance to platform: {info['dist_total']:.2f} m")
+            print(f"  Final velocity: {info['vel_total']:.2f} m/s")
+            print(f"  On pad: {info['is_on_pad']}")
+            print("\nPress R for new episode, Q to quit, or close the window.")
 
-            # Wait for user input after termination
+            # Wait at final frame
             while True:
                 if vis.fig is None or not plt.fignum_exists(vis.fig.number):
                     running = False
@@ -81,12 +89,14 @@ def main():
                     break
 
                 if vis.should_reset:
-                    state, info = env.reset()
+                    print("\nRecording new episode...")
                     vis.reset()
-                    step = 0
-                    print("\nSimulation reset!")
+                    states, infos, final_step = record_episode(env, model)
+                    print(f"Recording complete! {len(states)} frames recorded.")
+                    frame_idx = 0
                     break
 
+                # Keep rendering final frame
                 vis.render(state)
 
     # Close everything

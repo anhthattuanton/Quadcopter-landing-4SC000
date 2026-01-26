@@ -17,7 +17,7 @@ arm_length = 0.15
 """Length of the quadcopter arms (meters)
 """
 
-max_thrust = 10.0
+max_thrust = 7.0
 """Maximum thrust per rotor (Newtons)
 
 """
@@ -55,3 +55,6 @@ x_init_max = 50.0
 x_init_min = -50.0
 """Minimum initial horizontal position (meters)
 """
+
+FRAME_SKIP = 10
+"""Number of frames to skip during visualization rendering"""
