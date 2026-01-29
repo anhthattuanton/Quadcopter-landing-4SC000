@@ -4,3 +4,4 @@ matplotlib      # Visualization/Plotting
 pytest          # Testing
 stable-baselines3 # (Optional but recommended) High-quality RL algorithms
 shimmy          # Compatibility layer if needed
+tensorboard     # For monitoring training progress
