@@ -60,7 +60,7 @@ def calculate_reward(state):
         terminated = True
         if is_on_pad and is_upright and is_soft:
             # Perfect landing: on pad, upright, and soft
-            reward = 100.0
+            reward = 700.0
         elif is_on_pad and (is_upright or is_soft):
             # Good aim and stable, but hard landing or the other way round
             reward = 30.0
@@ -76,13 +76,13 @@ def calculate_reward(state):
     # A2. Out of Bounds
     if np.abs(x) > x_init_max or y > y_init_max:
         terminated = True
-        reward = -50.0
+        reward = -90.0
         return reward, terminated, _build_info(dist_x, dist_y, dist_total, vx_rel, vy_rel, vel_rel_total, is_on_pad)
 
     # === B. SHAPING REWARDS (In-Flight) ===
     
-    # B0. Global survival bonus (small positive for staying alive)
-    reward += -0.01
+    # B0. Global survival bonus (small positive for staying alive)-----------------------
+    reward += -0.28
 
     if is_travel_phase:
         # === PHASE 1: TRAVEL REWARDS (Aggressive Flight) ===
@@ -121,11 +121,11 @@ def calculate_reward(state):
 
         # B2. Strict Stability: Heavily penalize any tilt
         if np.abs(theta) > 0.1:
-            r_tilt = -3.0 * np.abs(theta)
+            r_tilt = -1.2 * np.abs(theta)  # Penalize tilt ---------------------------------------
             reward += r_tilt
 
         # B3. Braking Penalty: Force the drone to slow down for soft landing
-        r_braking = -0.5 * vel_rel_total
+        r_braking = -0.4 * np.abs(vx_rel) #vel_rel_total
         reward += r_braking
 
         # B4. Penalize spinning (stricter in landing phase)
@@ -136,6 +136,10 @@ def calculate_reward(state):
         if vy_rel < -2.0:  # Falling faster than 2 m/s
             r_descent = -1.0 * (np.abs(vy_rel) - 2.0)
             reward += r_descent
+
+        # B6. Reward gentle descent -----------------------------------
+        if vy_rel < 0: # If moving down
+            reward += 1.2 * np.abs(vy_rel)
 
     info = _build_info(dist_x, dist_y, dist_total, vx_rel, vy_rel, vel_rel_total, is_on_pad)
 
