@@ -1,3 +1,17 @@
+"""
+Quadcopter Visualization Module.
+
+This module provides real-time visualization of the quadcopter simulation
+using matplotlib. It handles rendering of the quadcopter, platform, trajectory,
+and heads-up display (HUD) with state information.
+
+Features:
+    - Real-time animation with trajectory tracking
+    - Interactive controls (pause, reset, quit)
+    - HUD showing quadcopter and platform states
+    - Scalable quadcopter visualization for visibility
+"""
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -6,16 +20,37 @@ from src.simulation_data import dt, FRAME_SKIP
 
 class QuadcopterVisualizer:
     """
-    Visualization class for the Planar Quadcopter environment.
-    Handles all rendering, HUD display, and GUI controls.
+    Visualization handler for the planar quadcopter environment.
+
+    Manages matplotlib figure, renders environment state, handles user input,
+    and displays diagnostic information via HUD.
+
+    Attributes:
+        env: Reference to PlanarQuadcopterEnv for accessing arm_length.
+        fig (matplotlib.figure.Figure): Matplotlib figure object.
+        ax (matplotlib.axes.Axes): Matplotlib axes object.
+        hud_text (matplotlib.text.Text): Text object for HUD display.
+        trajectory_x (list): History of x positions for trajectory plotting.
+        trajectory_y (list): History of y positions for trajectory plotting.
+        paused (bool): True if animation is paused.
+        should_reset (bool): True if user requested environment reset.
+        should_quit (bool): True if user requested to quit.
+        visual_scale (float): Scale factor for quadcopter rendering.
+        platform_width (float): Width of platform in visualization (m).
+        platform_height (float): Height of platform in visualization (m).
+        x_limits (tuple): (min, max) x-axis limits for plot.
+        y_limits (tuple): (min, max) y-axis limits for plot.
+        sim_time (float): Accumulated simulation time in seconds.
+        dt (float): Simulation time step for time tracking.
     """
 
     def __init__(self, env):
         """
-        Initialize the visualizer with a reference to the environment.
+        Initialize the visualizer with environment reference.
 
         Args:
-            env: PlanarQuadcopterEnv instance
+            env (PlanarQuadcopterEnv): Environment instance for accessing
+                physical parameters like arm_length.
         """
         self.env = env
         self.fig = None
@@ -24,40 +59,57 @@ class QuadcopterVisualizer:
         self.trajectory_x = []
         self.trajectory_y = []
 
-        # GUI control flags
         self.paused = False
         self.should_reset = False
         self.should_quit = False
 
-        # Visual settings
         self.visual_scale = 10.0
         self.platform_width = 4.0
         self.platform_height = 0.6
         self.x_limits = (-50, 50)
         self.y_limits = (0, 35)
 
-        # Time tracking
         self.sim_time = 0.0
         self.dt = dt
 
     def _on_key_press(self, event):
-        """Handle keyboard events for GUI controls."""
+        """
+        Handle keyboard events for interactive control.
+
+        Args:
+            event (matplotlib.backend_bases.KeyEvent): Matplotlib key press event.
+
+        Key Bindings:
+            Space: Toggle pause/resume simulation
+            'r': Request environment reset
+            'q': Request quit application
+        """
         if event.key == " ":
             self.paused = not self.paused
             status = "PAUSED" if self.paused else "RUNNING"
             print(f"Simulation {status}")
-        elif event.key == "r":
+        elif event.key == "r" or event.key == "R":
             self.should_reset = True
             self.paused = False
-        elif event.key == "q":
+        elif event.key == "q" or event.key == "Q":
             self.should_quit = True
 
-    def _on_close(self, event):
-        """Handle window close event."""
+    def _on_close(self):
+        """
+        Handle window close event by setting quit flag.
+
+        Args:
+            event (matplotlib.backend_bases.CloseEvent): Window close event.
+        """
         self.should_quit = True
 
     def reset(self):
-        """Reset visualization state (trajectory, flags, time)."""
+        """
+        Reset visualization state including trajectory and simulation time.
+
+        Clears trajectory history, resets control flags (except should_quit),
+        and resets simulation time counter to zero.
+        """
         self.trajectory_x = []
         self.trajectory_y = []
         self.paused = False
@@ -66,51 +118,54 @@ class QuadcopterVisualizer:
 
     def render(self, state):
         """
-        Render the current state of the environment.
+        Render the current environment state.
+
+        Creates figure if needed, updates all visual elements, and processes
+        user input events. Updates simulation time when not paused.
 
         Args:
-            state: numpy array with environment state
-                   [x, y, theta, x_dot, y_dot, theta_dot, platform_x, platform_v, platform_a]
+            state (np.ndarray): Environment state array of shape (9,).
+                state[0]: x - Horizontal position (m)
+                state[1]: y - Vertical position (m)
+                state[2]: theta - Orientation angle (rad)
+                state[3]: x_dot - Horizontal velocity (m/s)
+                state[4]: y_dot - Vertical velocity (m/s)
+                state[5]: theta_dot - Angular velocity (rad/s)
+                state[6]: platform_x - Platform x position (m)
+                state[7]: platform_v - Platform velocity (m/s)
+                state[8]: platform_a - Platform acceleration (m/s²)
         """
-        # Initialize figure and axis only once
         if self.fig is None:
             self.fig, self.ax = plt.subplots(figsize=(14, 8))
             self.fig.subplots_adjust(right=0.65)
             plt.ion()
             self.hud_text = None
-
-            # Connect event handlers
             self.fig.canvas.mpl_connect("key_press_event", self._on_key_press)
             self.fig.canvas.mpl_connect("close_event", self._on_close)
 
-        # Check if figure still exists
         if not plt.fignum_exists(self.fig.number):
             self.should_quit = True
             return
 
-        # Clear the axis every frame
+        if not self.paused:
+            self.sim_time += self.dt
+
         self.ax.cla()
 
-        # Set axis limits and labels
         self.ax.set_xlim(*self.x_limits)
         self.ax.set_ylim(*self.y_limits)
         self.ax.set_aspect("equal")
         self.ax.set_xlabel("X (m)")
         self.ax.set_ylabel("Y (m)")
 
-        # Update title to show pause status
         status_str = " [PAUSED]" if self.paused else ""
         self.ax.set_title(f"Planar Quadcopter Landing{status_str}")
         self.ax.grid(True, alpha=0.3)
 
-        # Extract state
         x, y, theta = state[0], state[1], state[2]
         x_dot, y_dot, theta_dot = state[3], state[4], state[5]
-        platform_x = state[6]
-        platform_v = state[7]
-        platform_a = state[8]
+        platform_x, platform_v, platform_a = state[6], state[7], state[8]
 
-        # Store trajectory (only if not paused)
         if not self.paused and (
             len(self.trajectory_x) == 0
             or (self.trajectory_x[-1] != x or self.trajectory_y[-1] != y)
@@ -124,25 +179,18 @@ class QuadcopterVisualizer:
 
         # Draw trajectory
         self._draw_trajectory()
-
-        # Draw platform
         self._draw_platform(platform_x)
-
-        # Draw quadcopter
         self._draw_quadcopter(x, y, theta)
-
-        # Draw HUD
         self._draw_hud(
             x, y, theta, x_dot, y_dot, theta_dot, platform_x, platform_v, platform_a
         )
 
-        # Force canvas update and process events
         self.fig.canvas.draw_idle()
         self.fig.canvas.flush_events()
         plt.pause(0.01)
 
     def _draw_trajectory(self):
-        """Draw the drone's trajectory path."""
+        """Draw the drone's flight path as a dashed green line."""
         if len(self.trajectory_x) > 1:
             self.ax.plot(
                 self.trajectory_x,
@@ -154,7 +202,12 @@ class QuadcopterVisualizer:
             )
 
     def _draw_platform(self, platform_x):
-        """Draw the landing platform."""
+        """
+        Draw the landing platform as a red rectangle at ground level.
+
+        Args:
+            platform_x (float): Platform center x position in meters.
+        """
         platform_left = platform_x - self.platform_width / 2
         platform_rect = plt.Rectangle(
             (platform_left, 0),
@@ -166,26 +219,32 @@ class QuadcopterVisualizer:
         self.ax.add_patch(platform_rect)
 
     def _draw_quadcopter(self, x, y, theta):
-        """Draw the quadcopter with arms, motors, and orientation arrow."""
+        """
+        Draw the quadcopter with arms, motors, and orientation arrow.
+
+        Renders:
+        - Blue line connecting left and right motors
+        - Blue dot at center of mass
+        - Black dots at motor positions
+        - Orange arrow showing "up" direction relative to drone body
+
+        Args:
+            x (float): Quadcopter x position in meters.
+            y (float): Quadcopter y position in meters.
+            theta (float): Quadcopter orientation in radians.
+        """
         visual_arm_length = self.env.arm_length * self.visual_scale
 
-        # Calculate arm endpoints
         left_x = x - visual_arm_length * np.cos(theta)
         left_y = y - visual_arm_length * np.sin(theta)
         right_x = x + visual_arm_length * np.cos(theta)
         right_y = y + visual_arm_length * np.sin(theta)
 
-        # Draw arms
         self.ax.plot([left_x, right_x], [left_y, right_y], "b-", linewidth=4)
-
-        # Draw center dot
         self.ax.plot(x, y, "bo", markersize=12)
-
-        # Draw motor positions
         self.ax.plot(left_x, left_y, "ko", markersize=10)
         self.ax.plot(right_x, right_y, "ko", markersize=10)
 
-        # Draw orientation arrow
         arrow_length = visual_arm_length * 1.2
         arrow_dx = -arrow_length * np.sin(theta)
         arrow_dy = arrow_length * np.cos(theta)
@@ -204,10 +263,29 @@ class QuadcopterVisualizer:
     def _draw_hud(
         self, x, y, theta, x_dot, y_dot, theta_dot, platform_x, platform_v, platform_a
     ):
-        """Draw the Heads-Up Display with state information."""
+        """
+        Draw the heads-up display with state information and controls.
+
+        Displays:
+        - Current status (FLYING, PAUSED, or LANDED/CRASHED)
+        - Simulation time
+        - Quadcopter position and velocity
+        - Platform state
+        - Keyboard control reference
+
+        Args:
+            x (float): Quadcopter x position (m).
+            y (float): Quadcopter y position (m).
+            theta (float): Quadcopter orientation (rad).
+            x_dot (float): Quadcopter x velocity (m/s).
+            y_dot (float): Quadcopter y velocity (m/s).
+            theta_dot (float): Quadcopter angular velocity (rad/s).
+            platform_x (float): Platform x position (m).
+            platform_v (float): Platform velocity (m/s).
+            platform_a (float): Platform acceleration (m/s²).
+        """
         theta_deg = np.degrees(theta)
 
-        # Determine status
         if y <= 0.0:
             status = "LANDED/CRASHED"
         elif self.paused:
@@ -244,11 +322,9 @@ class QuadcopterVisualizer:
             f"  Q     - Quit"
         )
 
-        # Remove old HUD text if it exists
         if self.hud_text is not None:
             self.hud_text.remove()
 
-        # Add text outside the plot area
         self.hud_text = self.fig.text(
             0.68,
             0.95,
@@ -261,7 +337,12 @@ class QuadcopterVisualizer:
         )
 
     def close(self):
-        """Close the visualization and cleanup."""
+        """
+        Close the visualization window and cleanup resources.
+
+        Closes the matplotlib figure, releases references, and disables
+        interactive mode.
+        """
         if self.fig is not None:
             plt.close(self.fig)
             self.fig = None

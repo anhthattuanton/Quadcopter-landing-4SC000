@@ -1,3 +1,13 @@
+"""
+Planar Quadcopter Gymnasium Environment.
+
+This module defines a custom Gymnasium environment for training a reinforcement
+learning agent to land a 2D quadcopter on a moving platform.
+
+The environment follows the Gymnasium API and can be used with standard RL
+libraries like Stable-Baselines3.
+"""
+
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
@@ -21,13 +31,50 @@ from src.simulation_data import (
 
 class PlanarQuadcopterEnv(gym.Env):
     """
-    A 2D Planar Quadcopter environment suitable for RL.
-    Goal: Land gently on a moving platform.
+    Gymnasium environment for 2D quadcopter landing on a moving platform.
+
+    The agent controls a planar quadcopter with two motors and must land
+    safely on a horizontally moving platform. The observation includes
+    the quadcopter state and platform state.
+
+    Observation Space (9 dimensions):
+        [0] x: Horizontal position (m)
+        [1] y: Vertical position (m)
+        [2] theta: Orientation angle (rad)
+        [3] x_dot: Horizontal velocity (m/s)
+        [4] y_dot: Vertical velocity (m/s)
+        [5] theta_dot: Angular velocity (rad/s)
+        [6] platform_x: Platform horizontal position (m)
+        [7] platform_v: Platform horizontal velocity (m/s)
+        [8] platform_a: Platform horizontal acceleration (m/s²)
+
+    Action Space (2 dimensions):
+        [0] Left motor thrust: Normalized to [-1, 1]
+        [1] Right motor thrust: Normalized to [-1, 1]
+
+    Rewards:
+        See reward_func.py for detailed reward structure.
+
+    Termination:
+        - Quadcopter touches ground (y <= 0)
+        - Quadcopter goes out of bounds
+
+    Attributes:
+        dynamics (PlanarQuadcopterDynamics): Physics simulation handler.
+        platform (MovingPlatform): Moving landing target.
+        arm_length (float): Quadcopter arm length for visualization.
+        state (np.ndarray): Current environment state.
     """
 
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 30}
 
     def __init__(self):
+        """
+        Initialize the environment with action/observation spaces and components.
+
+        Sets up the action space (2D continuous), observation space (9D continuous),
+        quadcopter dynamics handler, and moving platform.
+        """
         super().__init__()
 
         # Define action and observation space
@@ -75,6 +122,21 @@ class PlanarQuadcopterEnv(gym.Env):
         )
 
     def reset(self, seed=None, options=None):
+        """
+        Reset the environment to a random initial state.
+
+        The quadcopter starts at a random position within bounds, with small
+        random velocities. The platform is also reset to a random state.
+
+        Args:
+            seed (int, optional): Random seed for reproducibility.
+            options (dict, optional): Additional reset options (unused).
+
+        Returns:
+            tuple: (observation, info)
+                observation (np.ndarray): Initial state array of shape (9,).
+                info (dict): Empty dictionary (Gymnasium API requirement).
+        """
         super().reset(seed=seed)
 
         # Create a blank state
@@ -98,10 +160,23 @@ class PlanarQuadcopterEnv(gym.Env):
 
     def step(self, action):
         """
-        Executes one time step within the environment.
+        Execute one simulation step with the given action.
+
+        Updates the quadcopter state using physics simulation, advances the
+        platform, and computes the reward.
+
+        Args:
+            action (np.ndarray): Motor commands of shape (2,), normalized to [-1, 1].
+                action[0]: Left motor thrust command.
+                action[1]: Right motor thrust command.
 
         Returns:
-            observation (np.array), reward (float), terminated (bool), truncated (bool), info (dict)
+            tuple: (observation, reward, terminated, truncated, info)
+                observation (np.ndarray): New state array of shape (9,).
+                reward (float): Reward for this transition.
+                terminated (bool): True if episode ended (landed or out of bounds).
+                truncated (bool): Always False (no time limit truncation).
+                info (dict): Diagnostic information from reward function.
         """
         # 1. Compute drone dynamics
         x_new, y_new, theta_new, x_dot_new, y_dot_new, theta_dot_new = (
@@ -128,9 +203,7 @@ class PlanarQuadcopterEnv(gym.Env):
         )
 
         # 4. Calculate Reward
-        reward, terminated, info = calculate_reward(
-            self.state
-        )
+        reward, terminated, info = calculate_reward(self.state)
 
         truncated = False
 

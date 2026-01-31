@@ -1,8 +1,27 @@
+"""
+Reinforcement Learning Training Script for Quadcopter Landing.
+
+This script trains a PPO (Proximal Policy Optimization) agent to land a 2D
+quadcopter on a moving platform using Stable-Baselines3. Models are saved
+periodically and training progress is logged to TensorBoard.
+
+Usage:
+    python -m src.RL
+
+Output:
+    - Trained models saved to models/PPO/<timesteps>
+    - TensorBoard logs saved to ppo_quadcopter_tensorboard/
+
+To monitor training:
+    tensorboard --logdir=./ppo_quadcopter_tensorboard/
+"""
+
+import os
+
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from typing import Callable
-import os
 import shutil
 
 from src.env import PlanarQuadcopterEnv

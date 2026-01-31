@@ -1,60 +1,67 @@
-# Quadcopter configuration parameters
+"""
+Simulation Parameters and Constants for the 2D Planar Quadcopter Environment.
+
+This module contains all configurable parameters for:
+- Quadcopter physical properties (mass, inertia, dimensions)
+- Motion constraints (velocity limits, thrust limits)
+- Landing pad properties (velocity, acceleration limits)
+- Simulation settings (time step, initial position bounds)
+- Visualization settings (frame skip for playback)
+
+All values use SI units (meters, seconds, kilograms, Newtons).
+"""
+
+# === QUADCOPTER PHYSICAL PROPERTIES ===
+
 m = 0.724
-"""Mass of the quadcopter (kg)
-"""
-
-vy_max = 5.0
-"""
-Maximum vertical velocity of the quadcopter (m/s)
-"""
-
-vx_max = 21.0
-"""
-Maximum horizontal velocity of the quadcopter (m/s)
-"""
-
-arm_length = 0.15
-"""Length of the quadcopter arms (meters)
-"""
-
-max_thrust = 7.0
-"""Maximum thrust per rotor (Newtons)
-
-"""
+"""float: Mass of the quadcopter in kilograms (kg)."""
 
 J = 0.011
-"""Moment of inertia of the quadcopter (kg*m^2)
-"""
+"""float: Moment of inertia of the quadcopter about the z-axis in kg·m²."""
 
-# Landing pad configuration parameters
+arm_length = 0.15
+"""float: Length of each quadcopter arm from center to motor in meters (m)."""
+
+max_thrust = 7.0
+"""float: Maximum thrust force per motor in Newtons (N)."""
+
+# === QUADCOPTER MOTION CONSTRAINTS ===
+
+vx_max = 21.0
+"""float: Maximum horizontal velocity of the quadcopter in m/s."""
+
+vy_max = 5.0
+"""float: Maximum vertical velocity of the quadcopter in m/s."""
+
+# === LANDING PAD PROPERTIES ===
+
 vx_pad_max = 5.0
-"""Maximum horizontal velocity of the landing pad (m/s)
-"""
+"""float: Maximum horizontal velocity of the landing pad in m/s."""
 
 a_pad_max = 2.0
-"""Maximum horizontal acceleration of the landing pad (m/s^2)
-"""
+"""float: Maximum horizontal acceleration of the landing pad in m/s²."""
+
+# === SIMULATION SETTINGS ===
 
 dt = 0.01
-"""Time step for the simulation (seconds)
-"""
+"""float: Simulation time step in seconds (s). Smaller values increase accuracy but slow simulation."""
 
-# Initial position bounds
+# === INITIAL POSITION BOUNDS ===
+
 y_init_min = 15.0
-"""Minimum initial height of the quadcopter (meters)
-"""
+"""float: Minimum initial height of the quadcopter in meters (m)."""
 
 y_init_max = 30.0
-"""Maximum initial height of the quadcopter (meters)
-"""
+"""float: Maximum initial height of the quadcopter in meters (m)."""
 
 x_init_max = 50.0
-"""Maximum initial horizontal position (meters)
-"""
+"""float: Maximum initial horizontal position in meters (m). Defines right boundary."""
 
 x_init_min = -50.0
-"""Minimum initial horizontal position (meters)
-"""
+"""float: Minimum initial horizontal position in meters (m). Defines left boundary."""
+
+# === VISUALIZATION SETTINGS ===
 
 FRAME_SKIP = 10
-"""Number of frames to skip during visualization rendering"""
+"""int: Number of simulation frames to skip between rendered frames for faster playback.
+Higher values speed up playback but reduce smoothness."""
